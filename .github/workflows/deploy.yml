@@ -1,0 +1,99 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Two deploys must never change the same environment at once.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply the shared stack
+        working-directory: infra/shared
+        run: |
+          terraform init -input=false -backend-config=../backend.hcl
+          terraform apply -auto-approve -input=false
+      - name: Build and push the image
+        id: push
+        working-directory: infra/shared
+        run: |
+          registry=$(terraform output -raw registry_login_server)
+          az acr login --name "$(terraform output -raw registry_name)"
+          docker build -t "$registry/danskhjaelp:$GITHUB_SHA" "$GITHUB_WORKSPACE"
+          docker push "$registry/danskhjaelp:$GITHUB_SHA"
+          # Pinned by digest, so prod runs exactly the image dev tested.
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$registry/danskhjaelp:$GITHUB_SHA")
+          echo "image=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: ./.github/actions/deploy-app
+        with:
+          environment: dev
+          image: ${{ needs.build.outputs.image }}
+
+  # The prod environment requires my approval in GitHub, so this job waits here.
+  deploy-prod:
+    needs: [build, deploy-dev]
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: ./.github/actions/deploy-app
+        with:
+          environment: prod
+          image: ${{ needs.build.outputs.image }}
