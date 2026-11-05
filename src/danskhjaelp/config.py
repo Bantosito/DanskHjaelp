@@ -11,3 +11,8 @@ class Settings(BaseSettings):
     telegram_allowed_user_id: int
     database_url: str
     public_url: str | None = None
+
+    # Only set for the release job, which manages the database.
+    database_admin_url: str | None = None
+    app_db_role: str | None = None
+    app_db_password: str | None = None

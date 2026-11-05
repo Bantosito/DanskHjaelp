@@ -27,3 +27,11 @@ cd infra/bootstrap
 terraform init -backend-config=../backend.hcl
 terraform apply
 ```
+
+## How the other stacks are applied
+
+`shared` and `app` are only applied by `.github/workflows/deploy.yml`. Every PR that touches `infra/` gets a plan posted as a comment, so changes are visible before they happen.
+
+The first deploy creates Key Vault with placeholder values for the Telegram token and my Telegram ID. They are set by hand, so they never pass through this repo or Terraform state.
+
+`infra/.trivyignore` lists the accepted security findings, each with its reason.

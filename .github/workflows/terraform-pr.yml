@@ -1,0 +1,101 @@
+name: Terraform PR
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform-pr.yml"
+
+permissions:
+  contents: read
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Formatting
+        run: terraform fmt -check -recursive infra
+      - name: Validate
+        run: |
+          for stack in bootstrap shared app; do
+            terraform -chdir=infra/$stack init -backend=false -input=false
+            terraform -chdir=infra/$stack validate
+          done
+      - uses: terraform-linters/setup-tflint@v4
+      - name: Lint
+        run: tflint --chdir=infra --recursive
+      - name: Security scan
+        run: >-
+          docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.76.2
+          config --severity HIGH,CRITICAL --exit-code 1 --ignorefile infra/.trivyignore infra
+
+  plan:
+    # Pull requests from forks get no Azure token, so this only runs for branches in this repo.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Plan
+        run: |
+          plan() {
+            local status
+            {
+              echo "### $1"
+              echo '```'
+              terraform -chdir="$2" plan -no-color -input=false -lock=false "${@:3}" 2>&1 \
+                | grep -vE 'Refreshing state|Reading\.\.\.|Read complete'
+              status=${PIPESTATUS[0]}
+              echo '```'
+            } >> plan.md
+            return "$status"
+          }
+          failed=0
+          terraform -chdir=infra/shared init -input=false -backend-config=../backend.hcl
+          plan shared infra/shared || failed=1
+
+          # The app stacks read the shared stack's outputs, so they wait until it has been applied.
+          account=$(awk -F'"' '/storage_account_name/{print $2}' infra/backend.hcl)
+          exists=$(az storage blob exists --auth-mode login --account-name "$account" \
+            --container-name tfstate --name shared.tfstate --query exists -o tsv)
+          if [ "$exists" = "true" ]; then
+            for environment in dev prod; do
+              rm -rf infra/app/.terraform
+              terraform -chdir=infra/app init -input=false -backend-config=../backend.hcl \
+                -backend-config="key=app-$environment.tfstate"
+              plan "app ($environment)" infra/app -var-file="$environment.tfvars" \
+                -var image=registry.invalid/image-set-by-the-deploy-pipeline || failed=1
+            done
+          else
+            echo "App stacks: planned after the shared stack is first applied." >> plan.md
+          fi
+          exit "$failed"
+      - name: Post plan to the PR
+        if: always() && hashFiles('plan.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          # This repo is public, so the subscription ID is removed from what gets posted.
+          sed "s/$SUBSCRIPTION_ID/<subscription>/g" plan.md | head -c 60000 > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
