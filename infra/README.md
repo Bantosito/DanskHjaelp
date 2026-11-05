@@ -24,6 +24,6 @@ for provider in Microsoft.App Microsoft.OperationalInsights Microsoft.ContainerR
 done
 
 cd infra/bootstrap
-terraform init
+terraform init -backend-config=../backend.hcl
 terraform apply
 ```
