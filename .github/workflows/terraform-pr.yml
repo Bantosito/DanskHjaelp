@@ -75,10 +75,8 @@ jobs:
           plan shared infra/shared || failed=1
 
           # The app stacks read the shared stack's outputs, so they wait until it has been applied.
-          account=$(awk -F'"' '/storage_account_name/{print $2}' infra/backend.hcl)
-          exists=$(az storage blob exists --auth-mode login --account-name "$account" \
-            --container-name tfstate --name shared.tfstate --query exists -o tsv)
-          if [ "$exists" = "true" ]; then
+          # `init` creates an empty state file, so check for outputs, not for the file.
+          if [ "$(terraform -chdir=infra/shared output -json)" != "{}" ]; then
             for environment in dev prod; do
               rm -rf infra/app/.terraform
               terraform -chdir=infra/app init -input=false -backend-config=../backend.hcl \
