@@ -146,6 +146,10 @@ The messaging layer is kept thin, so a WhatsApp adapter can be added later witho
 
 Claude writes the code, Terraform and pipelines, with a short explanation of each step. Each PR carries a "what this does and what the concept is" note, so the PR history is a learning log. Prod only deploys after my approval. Secrets never go in chat, the repo or Terraform variables.
 
+### Model choice
+
+Lookups use `claude-opus-5-5` at low effort by default. Two settings change it per environment without a code change: `ANTHROPIC_MODEL` (for example `claude-haiku-5-5`, far cheaper and faster, but weaker on tricky Danish) and `ANTHROPIC_EFFORT`. Repeat lookups are answered from the database, so only new words reach the model. Requests opt into server-side fallbacks, so if a model declines a request the API retries on another model in the same call.
+
 ---
 
 ## Data model
@@ -172,7 +176,7 @@ Claude writes the code, Terraform and pipelines, with a short explanation of eac
 ## Milestones
 
 - [ ] **M0 – Foundation.** Repo, Terraform, pipelines and a basic bot replying in Danish from Azure, in dev and prod. Every later feature ships through this pipeline.
-- [ ] **M1 – Lookup bot.** Word in → answer card → saved. DB-first lookup, base-form normalization, ✏️ corrections. *Useful from day one.*
+- [x] **M1 – Lookup bot.** Word in → answer card → saved. DB-first lookup, base-form normalization, ✏️ corrections. *Useful from day one.*
 - [ ] **M2 – Quizzes.** FSRS cards, pings every ~2 h as a Container Apps Job, meaning, gender and inflection tasks, quiet hours, backlog cap.
 - [ ] **M3 – Intake.** Photos, scans and screenshots via Claude vision with a confirm step, originals in Blob Storage. iOS Shortcut "Slå op".
 - [ ] **M4 – Richer tasks.** Gap-fills from saved sentences, free-sentence grading, grammar rule cards.

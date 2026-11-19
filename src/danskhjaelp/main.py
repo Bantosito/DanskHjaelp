@@ -10,14 +10,28 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from telegram import Update
 from telegram.request import BaseRequest
 
-from danskhjaelp.bot import build_bot
+from danskhjaelp.bot import Services, build_bot
 from danskhjaelp.config import Settings
+from danskhjaelp.db import make_sessions
+from danskhjaelp.dictionary import ClaudeDictionary, Dictionary
 
 
-def create_app(settings: Settings | None = None, request: BaseRequest | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    request: BaseRequest | None = None,
+    dictionary: Dictionary | None = None,
+) -> FastAPI:
     settings = settings or Settings()  # type: ignore[call-arg]
-    bot = build_bot(settings.telegram_bot_token, settings.telegram_allowed_user_id, request)
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    dictionary = dictionary or ClaudeDictionary(
+        settings.anthropic_api_key, settings.anthropic_model, settings.anthropic_effort
+    )
+    bot = build_bot(
+        settings.telegram_bot_token,
+        settings.telegram_allowed_user_id,
+        Services(make_sessions(engine), dictionary),
+        request,
+    )
     bot_lock = asyncio.Lock()
     bot_ready = False
 
