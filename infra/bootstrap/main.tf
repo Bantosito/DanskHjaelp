@@ -71,7 +71,7 @@ resource "azurerm_federated_identity_credential" "plan" {
   parent_id = azurerm_user_assigned_identity.plan.id
   issuer    = "https://token.actions.githubusercontent.com"
   audience  = ["api://AzureADTokenExchange"]
-  subject   = "repo:${var.github_repository}:pull_request"
+  subject   = "${var.github_subject_prefix}:pull_request"
 }
 
 resource "azurerm_user_assigned_identity" "deploy" {
@@ -89,7 +89,7 @@ resource "azurerm_federated_identity_credential" "deploy" {
   parent_id = azurerm_user_assigned_identity.deploy[each.key].id
   issuer    = "https://token.actions.githubusercontent.com"
   audience  = ["api://AzureADTokenExchange"]
-  subject   = "repo:${var.github_repository}:environment:${each.key}"
+  subject   = "${var.github_subject_prefix}:environment:${each.key}"
 }
 
 # The plan identity reads everything Terraform has to refresh and changes nothing. Plain Reader

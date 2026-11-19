@@ -4,10 +4,10 @@ variable "location" {
   default     = "swedencentral"
 }
 
-variable "github_repository" {
-  description = "The only repository allowed to sign in to Azure, as owner/name."
+variable "github_subject_prefix" {
+  description = "The only repository allowed to sign in to Azure. GitHub names it by immutable IDs, so re-creating the name elsewhere can't match."
   type        = string
-  default     = "Bantosito/DanskHjaelp"
+  default     = "repo:Bantosito@72502994/DanskHjaelp@1446988561"
 }
 
 variable "budget_email" {

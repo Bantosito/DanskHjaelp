@@ -1,0 +1,8 @@
+# Key Vault accepts connections from public networks. GitHub's runners and my laptop must reach it
+# to manage secrets, and neither has a fixed address. Access still needs an Azure identity with a
+# role on the vault. Revisit if the pipeline moves to runners inside the VNet.
+AVD-AZU-0013
+
+# The state storage account is reachable from public networks for the same reason. Access keys are
+# turned off, so every read needs an Azure identity with a role on the container.
+AZU-0012

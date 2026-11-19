@@ -9,7 +9,8 @@ if context.config.config_file_name:
 
 
 def run_migrations_online() -> None:
-    engine = create_engine(os.environ["DATABASE_URL"], poolclass=pool.NullPool)
+    url = context.config.attributes.get("url") or os.environ["DATABASE_URL"]
+    engine = create_engine(url, poolclass=pool.NullPool)
     with engine.connect() as connection:
         context.configure(connection=connection)
         with context.begin_transaction():

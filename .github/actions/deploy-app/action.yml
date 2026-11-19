@@ -1,0 +1,56 @@
+name: Deploy app
+description: Apply the app stack for one environment, run the release job, and smoke test.
+
+inputs:
+  environment:
+    description: dev or prod
+    required: true
+  image:
+    description: Full image reference, pinned by digest
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Apply
+      shell: bash
+      working-directory: infra/app
+      run: |
+        terraform init -input=false -backend-config=../backend.hcl \
+          -backend-config="key=app-${{ inputs.environment }}.tfstate"
+        terraform apply -auto-approve -input=false \
+          -var-file="${{ inputs.environment }}.tfvars" -var image="${{ inputs.image }}"
+    - name: Run the release job
+      shell: bash
+      working-directory: infra/app
+      run: |
+        az config set extension.use_dynamic_install=yes_without_prompt --only-show-errors
+        group=$(terraform output -raw resource_group)
+        job=$(terraform output -raw release_job_name)
+        execution=$(az containerapp job start -n "$job" -g "$group" --query name -o tsv)
+        for _ in $(seq 1 40); do
+          status=$(az containerapp job execution show -n "$job" -g "$group" \
+            --job-execution-name "$execution" --query properties.status -o tsv)
+          echo "Release job: $status"
+          case "$status" in
+            Succeeded) exit 0 ;;
+            Failed|Degraded|Stopped) exit 1 ;;
+          esac
+          sleep 15
+        done
+        echo "Release job timed out"
+        exit 1
+    - name: Smoke test
+      shell: bash
+      working-directory: infra/app
+      run: |
+        url=$(terraform output -raw url)
+        curl --fail --silent --show-error --retry 12 --retry-delay 10 --retry-all-errors \
+          --max-time 30 "$url/readyz"
+        echo
+        status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+          --max-time 30 -X POST "$url/telegram/webhook" -d '{}')
+        if [ "$status" != "403" ]; then
+          echo "The webhook accepted a call without the secret: $status"
+          exit 1
+        fi
