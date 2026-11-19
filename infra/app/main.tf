@@ -31,6 +31,7 @@ locals {
     telegram-allowed-user-id = "TELEGRAM_ALLOWED_USER_ID"
     telegram-webhook-secret  = "TELEGRAM_WEBHOOK_SECRET"
     database-url             = "DATABASE_URL"
+    anthropic-api-key        = "ANTHROPIC_API_KEY"
   }
   release_secrets = merge(local.app_secrets, {
     database-admin-url = "DATABASE_ADMIN_URL"
@@ -90,6 +91,7 @@ resource "azurerm_key_vault_secret" "manual" {
   for_each = {
     telegram-bot-token       = "0:placeholder"
     telegram-allowed-user-id = "0"
+    anthropic-api-key        = "placeholder"
   }
 
   name             = each.key
