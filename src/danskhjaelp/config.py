@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +12,11 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str
     telegram_allowed_user_id: int
     database_url: str
+    anthropic_api_key: str
+    # Lookups are short and frequent, so low effort keeps them fast. Model and effort can be
+    # changed per environment without a code change.
+    anthropic_model: str = "claude-opus-5-5"
+    anthropic_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
     public_url: str | None = None
 
     # Only set for the release job, which manages the database.
